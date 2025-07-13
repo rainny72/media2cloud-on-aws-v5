@@ -1,0 +1,27 @@
+{
+  "name": "m2c-api",
+  "version": "2.0.0",
+  "description": "media2cloud api gateway lambda",
+  "main": "index.js",
+  "private": true,
+  "scripts": {
+    "pretest": "npm install",
+    "test": "jest --coverage --coverageDirectory=../../coverage",
+    "build:clean": "rm -rf dist && mkdir -p dist",
+    "build:copy": "cp -rv index.js package.json lib dist/",
+    "build:install": "cd dist && npm install --omit=dev",
+    "build": "npm-run-all -s build:clean build:copy build:install",
+    "zip": "cd dist && zip -rq"
+  },
+  "author": "aws-mediaent-solutions",
+  "devDependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "^3.741.0",
+    "@aws-sdk/client-comprehend": "^3.741.0",
+    "@aws-sdk/client-dynamodb": "^3.741.0",
+    "@aws-sdk/client-s3": "^3.741.0",
+    "@aws-sdk/client-sfn": "^3.741.0",
+    "@aws-sdk/client-transcribe": "^3.741.0",
+    "@aws-sdk/util-dynamodb": "^3.741.0",
+    "core-lib": "file:../layers/core-lib"
+  }
+}

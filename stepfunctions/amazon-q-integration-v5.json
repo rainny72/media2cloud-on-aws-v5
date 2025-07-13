@@ -1,0 +1,11 @@
+{
+  "Comment": "State machine to update Media2Cloud metadata to Amazon Q bucket",
+  "StartAt": "Update metadata on Amazon Q bucket",
+  "States": {
+    "Update metadata on Amazon Q bucket": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-update-amazonq-bucket",
+      "End": true
+    }
+  }
+}

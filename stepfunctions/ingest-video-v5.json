@@ -1,0 +1,228 @@
+{
+  "Comment": "video ingest state machine to run mediainfo, start mediaconvert job to create proxy, and compute frame properties and embeddings",
+  "StartAt": "Run mediainfo",
+  "States": {
+    "Run mediainfo": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-ingest-video",
+        "Payload": {
+          "operation": "StateRunMediaInfo",
+          "uuid.$": "$.uuid",
+          "input.$": "$.input",
+          "data.$": "$.data",
+          "status": "NOT_STARTED",
+          "progress": 0
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.2
+        }
+      ],
+      "Next": "Skip transcode?"
+    },
+    "Skip transcode?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.data.mediainfo",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.data.mediainfo.container",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.data.mediainfo.container[0]",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.data.mediainfo.container[0].format",
+              "StringEquals": "MPEG-4"
+            },
+            {
+              "Variable": "$.data.mediainfo.container[0].fileSize",
+              "NumericLessThanEquals": 5368709120
+            },
+            {
+              "Variable": "$.data.mediainfo.video",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.data.mediainfo.video[0]",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.data.mediainfo.video[0].scanType",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.data.mediainfo.video[0].scanType",
+              "StringEquals": "Progressive"
+            }
+          ],
+          "Next": "Copy source video"
+        },
+        {
+          "And": [
+            {
+              "Variable": "$.input.aiOptions",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.input.aiOptions.filters",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.input.aiOptions.filters.transcode",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.input.aiOptions.filters.transcode.encoder",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.input.aiOptions.filters.transcode.encoder",
+              "StringEquals": "openh264"
+            }
+          ],
+          "Next": "OpenH264 transcode state machine"
+        }
+      ],
+      "Default": "Start and wait for mediaconvert job"
+    },
+    "Copy source video": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-ingest-video",
+        "Payload": {
+          "operation": "StateCopySourceVideo",
+          "uuid.$": "$.uuid",
+          "input.$": "$.input",
+          "data.$": "$.data",
+          "status": "NOT_STARTED",
+          "progress": 0
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 4,
+          "BackoffRate": 1.2
+        }
+      ],
+      "Next": "Extraction branch"
+    },
+    "OpenH264 transcode state machine": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::states:startExecution.sync:2",
+      "Parameters": {
+        "StateMachineArn": "arn:aws:states:us-west-2:189427507247:stateMachine:so0050-0a48a6e54829-openh264-transcode",
+        "Input.$": "$"
+      },
+      "OutputPath": "$.Output",
+      "Next": "Extraction branch"
+    },
+    "Start and wait for mediaconvert job": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-ingest-video",
+        "Payload": {
+          "token.$": "$$.Task.Token",
+          "uuid.$": "$.uuid",
+          "input.$": "$.input",
+          "data.$": "$.data",
+          "operation": "StateStartTranscode",
+          "status": "NOT_STARTED",
+          "progress": 0
+        }
+      },
+      "TimeoutSeconds": 86400,
+      "Next": "Extraction branch"
+    },
+    "Extraction branch": {
+      "Type": "Parallel",
+      "Next": "Ingest video completed",
+      "Branches": [
+        {
+          "StartAt": "Run frame extraction state machine",
+          "States": {
+            "Run frame extraction state machine": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::states:startExecution.sync:2",
+              "Parameters": {
+                "StateMachineArn": "arn:aws:states:us-west-2:189427507247:stateMachine:so0050-0a48a6e54829-frame-extraction",
+                "Input.$": "$"
+              },
+              "OutputPath": "$.Output",
+              "End": true
+            }
+          }
+        },
+        {
+          "StartAt": "Run audio extraction state machine",
+          "States": {
+            "Run audio extraction state machine": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::states:startExecution.sync:2",
+              "Parameters": {
+                "StateMachineArn": "arn:aws:states:us-west-2:189427507247:stateMachine:so0050-0a48a6e54829-audio-extraction",
+                "Input.$": "$"
+              },
+              "OutputPath": "$.Output",
+              "End": true
+            }
+          }
+        }
+      ]
+    },
+    "Ingest video completed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-ingest-video",
+        "Payload": {
+          "operation": "StateIngestVideoCompleted",
+          "parallelStateOutputs.$": "$"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.2
+        }
+      ],
+      "End": true
+    }
+  }
+}

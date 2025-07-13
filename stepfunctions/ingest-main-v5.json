@@ -1,0 +1,174 @@
+{
+  "Comment": "ingest state machine to create record, to extract media technical metadata, and to index results to elasticsearch",
+  "StartAt": "Create record",
+  "States": {
+    "Create record": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-ingest-main",
+        "Payload": {
+          "executionArn.$": "$$.Execution.Id",
+          "input.$": "$.input",
+          "operation": "StateCreateRecord"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.2
+        }
+      ],
+      "Next": "Start fixity (nested)"
+    },
+    "Start fixity (nested)": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::states:startExecution.sync:2",
+      "Parameters": {
+        "StateMachineArn": "arn:aws:states:us-west-2:189427507247:stateMachine:so0050-0a48a6e54829-ingest-fixity",
+        "Input.$": "$"
+      },
+      "OutputPath": "$.Output",
+      "Next": "Fixity completed"
+    },
+    "Fixity completed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-ingest-main",
+        "Payload": {
+          "uuid.$": "$.uuid",
+          "input.$": "$.input",
+          "data.$": "$.data",
+          "overallStatus.$": "$.overallStatus",
+          "operation": "StateFixityCompleted",
+          "status": "NOT_STARTED",
+          "progress": 0
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.2
+        }
+      ],
+      "Next": "Start media ingest state machine by type"
+    },
+    "Start media ingest state machine by type": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::states:startExecution.sync:2",
+      "Parameters": {
+        "StateMachineArn.$": "$.data.mediaStateMachineArn",
+        "Input.$": "$"
+      },
+      "OutputPath": "$.Output",
+      "Next": "Update record"
+    },
+    "Update record": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-ingest-main",
+        "Payload": {
+          "operation": "StateUpdateRecord",
+          "uuid.$": "$.uuid",
+          "status": "NOT_STARTED",
+          "progress": 0,
+          "input.$": "$.input",
+          "data.$": "$.data"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.2
+        }
+      ],
+      "Next": "Index ingest results"
+    },
+    "Index ingest results": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-ingest-main",
+        "Payload": {
+          "operation": "StateIndexIngestResults",
+          "uuid.$": "$.uuid",
+          "status": "NOT_STARTED",
+          "progress": 0,
+          "input.$": "$.input",
+          "data.$": "$.data"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.2
+        }
+      ],
+      "Next": "Completed"
+    },
+    "Completed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-ingest-main",
+        "Payload": {
+          "operation": "StateJobCompleted",
+          "uuid.$": "$.uuid",
+          "status.$": "$.status",
+          "progress.$": "$.progress",
+          "input.$": "$.input",
+          "data.$": "$.data"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.2
+        }
+      ],
+      "End": true
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+    "name": "update-amazonq-bucket",
+    "version": "1.0.0",
+    "description": "Amazon Q Integration state machine lambda",
+    "main": "index.js",
+    "private": true,
+    "scripts": {
+        "test": "jest --coverage",
+        "build:clean": "rm -rf dist && mkdir -p dist",
+        "build:copy": "cp -rv index.js package.json states dist/",
+        "build:install": "cd dist && npm install --omit=dev",
+        "build": "npm-run-all -s build:clean build:copy build:install",
+        "zip": "cd dist && zip -rq"
+    },
+    "author": "aws-mediaent-solutions",
+    "devDependencies": {
+        "@aws-sdk/client-s3": "^3.741.0",
+        "@smithy/smithy-client": "^2.5.1",
+        "core-lib": "file:../../layers/core-lib"
+    }
+}

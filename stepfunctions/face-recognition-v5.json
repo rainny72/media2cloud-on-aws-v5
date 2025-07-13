@@ -1,0 +1,197 @@
+{
+  "Comment": "Face recognition workflow leveraging opensource face-api model and Amazon Rekognition APIs",
+  "StartAt": "Prepare face embedding iterators",
+  "States": {
+    "Prepare face embedding iterators": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-face-recognition",
+        "Payload": {
+          "operation": "StatePrepareFaceEmbeddingIterators",
+          "uuid.$": "$.uuid",
+          "input.$": "$.input",
+          "data.$": "$.data"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.2
+        }
+      ],
+      "Next": "Map face embedding processing"
+    },
+    "Map face embedding processing": {
+      "Type": "Map",
+      "MaxConcurrency": 20,
+      "ItemsPath": "$.data.iterators",
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "INLINE"
+        },
+        "StartAt": "Run FaceNet model",
+        "States": {
+          "Run FaceNet model": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "OutputPath": "$.Payload",
+            "Parameters": {
+              "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-run-facenet",
+              "Payload.$": "$"
+            },
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ClientExecutionTimeoutException",
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException"
+                ],
+                "IntervalSeconds": 6,
+                "MaxAttempts": 6,
+                "BackoffRate": 2
+              },
+              {
+                "ErrorEquals": [
+                  "AccessDeniedException",
+                  "ResourceNotFoundException",
+                  "ValidationException"
+                ],
+                "MaxAttempts": 0
+              },
+              {
+                "ErrorEquals": [
+                  "InternalServerException",
+                  "ModelErrorException",
+                  "ModelNotReadyException",
+                  "ModelTimeoutException",
+                  "ServiceQuotaExceededException",
+                  "ThrottlingException",
+                  "ServiceUnavailableException"
+                ],
+                "IntervalSeconds": 60,
+                "MaxAttempts": 10,
+                "BackoffRate": 1.2
+              },
+              {
+                "ErrorEquals": [
+                  "Lambda.Unknown"
+                ],
+                "IntervalSeconds": 2,
+                "MaxAttempts": 2,
+                "BackoffRate": 2
+              }
+            ],
+            "Next": "More items?"
+          },
+          "More items?": {
+            "Type": "Choice",
+            "Choices": [
+              {
+                "Variable": "$.modelStatus",
+                "StringEquals": "COMPLETED",
+                "Next": "FaceNet iterator completed"
+              }
+            ],
+            "Default": "Run FaceNet model"
+          },
+          "FaceNet iterator completed": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "OutputPath": "$.Payload",
+            "Parameters": {
+              "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-face-recognition",
+              "Payload": {
+                "operation": "StateIteratorCompleted",
+                "itemData.$": "$"
+              }
+            },
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException",
+                  "Lambda.TooManyRequestsException"
+                ],
+                "IntervalSeconds": 1,
+                "MaxAttempts": 2,
+                "BackoffRate": 1.2
+              }
+            ],
+            "End": true
+          }
+        }
+      },
+      "ResultPath": "$.data.iterators",
+      "Next": "Cluster face embeddings"
+    },
+    "Cluster face embeddings": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-face-recognition",
+        "Payload": {
+          "uuid.$": "$.uuid",
+          "input.$": "$.input",
+          "data.$": "$.data",
+          "operation": "StateClusterFaceEmbeddings",
+          "status": "NOT_STARTED"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.2
+        }
+      ],
+      "Next": "Face recognition completed"
+    },
+    "Face recognition completed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-face-recognition",
+        "Payload": {
+          "operation": "StateJobCompleted",
+          "uuid.$": "$.uuid",
+          "input.$": "$.input",
+          "data.$": "$.data",
+          "status": "NOT_STARTED"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.2
+        }
+      ],
+      "End": true
+    }
+  }
+}

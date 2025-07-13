@@ -1,0 +1,159 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+const {
+  join,
+} = require('node:path');
+const {
+  CommonUtils: {
+    download,
+    uploadFile,
+    debugLocally,
+  },
+  JimpHelper: {
+    imageFromScratch,
+    imageFromS3,
+    drawGrid,
+  },
+  SegmentHelper: {
+    JSON_SHOTBOUNDARYFRAMES,
+    MAXBOUNDARYFRAMES,
+    groupFramesToShots,
+    agnesClusterFramesToScenes,
+  },
+} = require('core-lib');
+const BaseState = require('../shared/base');
+
+class StatePrepareShotBoundaryFrames extends BaseState {
+  static opSupported(op) {
+    return op === 'StatePrepareShotBoundaryFrames';
+  }
+
+  get itemData() {
+    return this.stateData.itemData;
+  }
+
+  get itemId() {
+    return this.stateData.itemId;
+  }
+
+  async process() {
+    const {
+      output: {
+        bucket,
+        framePrefix,
+      },
+      embeddings: embeddingsJson,
+      filterSettings,
+    } = this.itemData;
+
+    if (embeddingsJson === undefined) {
+      throw new Error('fail to collect frame embeddings result');
+    }
+
+    const frameEmbeddings = await download(bucket, join(framePrefix, embeddingsJson))
+      .then((res) =>
+        JSON.parse(res));
+
+    frameEmbeddings.frames.sort((a, b) =>
+      a.frameNum - b.frameNum);
+
+    // prepare for frame accurarcy black frames
+    const framesToShots = groupFramesToShots(frameEmbeddings.frames, filterSettings.minFrameSimilarity);
+    // create cluster
+    await _tagClusterIdToFrames(this.itemId, bucket, framePrefix, framesToShots, filterSettings);
+
+    const boundaries = _findShotBoundaryFrames(framesToShots);
+
+    const filtered = boundaries.filter((x) => x.step < 0);
+    console.log(`Number of boundaries = ${boundaries.length}. ${filtered.length} boundaries are either black or monochrome shots.`);
+
+    await uploadFile(bucket, framePrefix, JSON_SHOTBOUNDARYFRAMES, boundaries);
+    this.itemData.shotBoundaryFrames = JSON_SHOTBOUNDARYFRAMES;
+
+    return this.stateData;
+  }
+}
+
+function _findShotBoundaryFrames(shotGroups) {
+  let boundaries = [];
+
+  // collect the boundary frames:
+  // black, monochrome, and shot with single frame
+  for (let i = 1; i < shotGroups.length; i += 1) {
+    const pre = shotGroups[i - 1];
+    const cur = shotGroups[i];
+
+    const preFrame = pre[pre.length - 1];
+    const curFrame = cur[0];
+
+    const boundary = {
+      frameFrom: preFrame,
+      frameTo: curFrame,
+      maxFrames: MAXBOUNDARYFRAMES,
+    };
+
+    if (preFrame.knownType || curFrame.knownType) {
+      boundary.maxFrames = -1; // every frame
+    }
+
+    boundaries.push(boundary);
+  }
+
+  return boundaries;
+}
+
+async function _tagClusterIdToFrames(itemId, bucket, framePrefix, framesToShots, filterSettings) {
+  const framesToClusters = await agnesClusterFramesToScenes(framesToShots, filterSettings);
+  debugger;
+
+  if (debugLocally()) {
+    let clusterId = 0;
+    for (const cluster of framesToClusters) {
+      await _storeClusterGroup(bucket, framePrefix, cluster, clusterId++, '_framesToClusters');
+    }
+  }
+
+  for (let i = 0; i < framesToClusters.length; i += 1) {
+    const cluster = framesToClusters[i];
+    for (const frame of cluster) {
+      frame.clusterId = i;
+    }
+  }
+
+  return framesToClusters;
+}
+
+async function _storeClusterGroup(bucket, framePrefix, frames, sceneId, dir = '_clusters') {
+  const dimension = [160, 90];
+  let nCol = 12;
+  let nRow = 1;
+  if (frames.length <= nCol) {
+    nCol = frames.length;
+  } else {
+    nRow = Math.ceil(frames.length / nCol);
+  }
+
+  const gridImage = await imageFromScratch(nCol * dimension[0], nRow * dimension[1]);
+
+  const duped = frames.slice();
+  for (let row = 0; row < nRow; row += 1) {
+    for (let col = 0; col < nCol; col += 1) {
+      const frame = duped.shift();
+
+      if (frame === undefined) {
+        break;
+      }
+
+      let image = await imageFromS3(bucket, join(framePrefix, frame.name));
+      image = image.resize(...dimension);
+      gridImage.blit(image, col * dimension[0], row * dimension[1]);
+    }
+  }
+
+  // draw border lines
+  drawGrid(gridImage, nRow, nCol);
+
+  await gridImage.writeAsync(join(dir, `${sceneId}.jpg`));
+}
+
+module.exports = StatePrepareShotBoundaryFrames;

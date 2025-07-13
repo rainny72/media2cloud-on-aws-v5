@@ -1,0 +1,229 @@
+{
+  "Comment": "Audio extraction state machine extracts audion and create loudness logs.",
+  "StartAt": "Prepare audio iterators",
+  "States": {
+    "Prepare audio iterators": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-audio-extraction",
+        "Payload": {
+          "uuid.$": "$.uuid",
+          "input.$": "$.input",
+          "data.$": "$.data",
+          "operation": "StatePrepareAudioIterators",
+          "status": "NOT_STARTED",
+          "progress": 0
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.2
+        }
+      ],
+      "Next": "Parallel processing"
+    },
+    "Parallel processing": {
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "Extract loudness log (EBU R128)",
+          "States": {
+            "Extract loudness log (EBU R128)": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "OutputPath": "$.Payload",
+              "Parameters": {
+                "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-audio-extraction",
+                "Payload": {
+                  "operation": "StateExtractLoudnessLog",
+                  "uuid.$": "$.uuid",
+                  "status": "NOT_STARTED",
+                  "progress": 0,
+                  "input.$": "$.input",
+                  "data.$": "$.data"
+                }
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 1.2
+                }
+              ],
+              "End": true
+            }
+          }
+        },
+        {
+          "StartAt": "Use Amazon Transcribe?",
+          "States": {
+            "Use Amazon Transcribe?": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "And": [
+                    {
+                      "Variable": "$.input.aiOptions.asrModel",
+                      "IsPresent": true
+                    },
+                    {
+                      "Variable": "$.input.aiOptions.asrModel",
+                      "StringEquals": "transcribe"
+                    }
+                  ],
+                  "Next": "Run Amazon Transcribe"
+                }
+              ],
+              "Default": "Amazon Transcribe completed (or skipped)"
+            },
+            "Run Amazon Transcribe": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+              "Parameters": {
+                "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-audio-extraction",
+                "Payload": {
+                  "operation": "StateRunAmazonTranscribe",
+                  "token.$": "$$.Task.Token",
+                  "uuid.$": "$.uuid",
+                  "input.$": "$.input",
+                  "data.$": "$.data",
+                  "status": "NOT_STARTED",
+                  "progress": 0
+                }
+              },
+              "TimeoutSeconds": 86400,
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 1.2
+                }
+              ],
+              "Next": "Get Amazon Transcribe results"
+            },
+            "Get Amazon Transcribe results": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "OutputPath": "$.Payload",
+              "Parameters": {
+                "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-audio-extraction",
+                "Payload": {
+                  "operation": "StateGetTranscribeResults",
+                  "uuid.$": "$.uuid",
+                  "status": "NOT_STARTED",
+                  "progress": 0,
+                  "input.$": "$.input",
+                  "data.$": "$.data"
+                }
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 1.2
+                }
+              ],
+              "Next": "Amazon Transcribe completed (or skipped)"
+            },
+            "Amazon Transcribe completed (or skipped)": {
+              "Type": "Succeed"
+            }
+          }
+        },
+        {
+          "StartAt": "Run speaker diarisation workflow",
+          "States": {
+            "Run speaker diarisation workflow": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::states:startExecution.sync:2",
+              "Parameters": {
+                "StateMachineArn": "arn:aws:states:us-west-2:189427507247:stateMachine:so0050-0a48a6e54829-audio-metadata-extraction",
+                "Input.$": "$"
+              },
+              "OutputPath": "$.Output",
+              "End": true
+            }
+          }
+        }
+      ],
+      "Next": "Audio extraction completed"
+    },
+    "Audio extraction completed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-audio-extraction",
+        "Payload": {
+          "operation": "StateJobCompleted",
+          "stateExecution.$": "$$.Execution",
+          "parallelStateOutputs.$": "$"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "AccessDeniedException",
+            "ResourceNotFoundException",
+            "ValidationException"
+          ],
+          "MaxAttempts": 0
+        },
+        {
+          "ErrorEquals": [
+            "InternalServerException",
+            "ModelErrorException",
+            "ModelNotReadyException",
+            "ModelTimeoutException",
+            "ServiceQuotaExceededException",
+            "ThrottlingException",
+            "ServiceUnavailableException"
+          ],
+          "IntervalSeconds": 60,
+          "MaxAttempts": 10,
+          "BackoffRate": 1.2
+        },
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.2
+        }
+      ],
+      "End": true
+    }
+  }
+}

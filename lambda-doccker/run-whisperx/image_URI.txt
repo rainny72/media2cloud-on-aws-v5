@@ -1,0 +1,2 @@
+189427507247.dkr.ecr.us-west-2.amazonaws.com/whisperx-on-aws:0.1.17 
+https://189427507247-c6j3kqlj.us-west-2.console.aws.amazon.com/ecr/repositories/private/189427507247/whisperx-on-aws?region=us-west-2

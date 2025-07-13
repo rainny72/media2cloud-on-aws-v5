@@ -1,0 +1,22 @@
+{
+  "name": "ingest-audio",
+  "version": "3.0.0",
+  "description": "Ingest Audio nested state machine lambda to run mediainfo and start elastictranscoder job to create audio proxy",
+  "main": "index.js",
+  "private": true,
+  "scripts": {
+    "pretest": "npm install",
+    "test": "jest --coverage --coverageDirectory=../../../coverage",
+    "build:clean": "rm -rf dist && mkdir -p dist",
+    "build:copy": "cp -rv index.js package.json states dist/",
+    "build:install": "cd dist && npm install --omit=dev",
+    "build": "npm-run-all -s build:clean build:copy build:install",
+    "zip": "cd dist && zip -rq"
+  },
+  "author": "aws-mediaent-solutions",
+  "devDependencies": {
+    "core-lib": "file:../../../layers/core-lib",
+    "mediainfo": "file:../../../layers/mediainfo",
+    "service-backlog-lib": "file:../../../layers/service-backlog-lib"
+  }
+}

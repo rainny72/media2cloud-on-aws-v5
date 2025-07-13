@@ -1,0 +1,109 @@
+{
+  "Comment": "OpenH264 transcode state machine split video into chunks, transcode with OpenH264 codec, and stitch them back together",
+  "StartAt": "Prepare transcode iterators (split video)",
+  "States": {
+    "Prepare transcode iterators (split video)": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-openh264-transcode",
+        "Payload": {
+          "uuid.$": "$.uuid",
+          "input.$": "$.input",
+          "data.$": "$.data",
+          "operation": "StatePrepareTranscodeIterators",
+          "status": "NOT_STARTED",
+          "progress": 0
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.2
+        }
+      ],
+      "Next": "Map transcode iterations"
+    },
+    "Map transcode iterations": {
+      "Type": "Map",
+      "MaxConcurrency": 24,
+      "ItemsPath": "$.data.iterators",
+      "ItemSelector": {
+        "operation": "StateTranscodeVideo",
+        "itemId.$": "$$.Map.Item.Index",
+        "itemData.$": "$$.Map.Item.Value"
+      },
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "INLINE"
+        },
+        "StartAt": "Transcode video (X mins chunk)",
+        "States": {
+          "Transcode video (X mins chunk)": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "OutputPath": "$.Payload",
+            "Parameters": {
+              "FunctionName.$": "$.itemData.functionArn",
+              "Payload.$": "$"
+            },
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException",
+                  "Lambda.TooManyRequestsException"
+                ],
+                "IntervalSeconds": 1,
+                "MaxAttempts": 2,
+                "BackoffRate": 1.2
+              }
+            ],
+            "End": true
+          }
+        }
+      },
+      "ResultPath": "$.data.iterators",
+      "Next": "Transcode completed (stitch video)"
+    },
+    "Transcode completed (stitch video)": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "FunctionName.$": "$.data.transcode.functionArn",
+        "Payload": {
+          "uuid.$": "$.uuid",
+          "input.$": "$.input",
+          "data.$": "$.data",
+          "operation": "StateTranscodeCompleted",
+          "status": "NOT_STARTED",
+          "progress": 0
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.2
+        }
+      ],
+      "End": true
+    }
+  }
+}

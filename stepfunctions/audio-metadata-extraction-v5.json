@@ -1,0 +1,604 @@
+{
+  "Comment": "Audio metadata extraction state machine",
+  "StartAt": "Prepare audio metadata iterators",
+  "States": {
+    "Prepare audio metadata iterators": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-audio-metadata-extraction",
+        "Payload": {
+          "operation": "StatePrepareMetadataIterators",
+          "uuid.$": "$.uuid",
+          "input.$": "$.input",
+          "data.$": "$.data",
+          "status": "NOT_STARTED",
+          "progress": 0
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.2
+        }
+      ],
+      "Next": "Download language alignment model?"
+    },
+    "Download language alignment model?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.data.copy_model",
+          "IsPresent": true,
+          "Next": "Download alignment model"
+        }
+      ],
+      "Default": "Map audio metadata processing"
+    },
+    "Download alignment model": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-model-downloader",
+        "Payload.$": "$"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ClientExecutionTimeoutException",
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException"
+          ],
+          "IntervalSeconds": 6,
+          "MaxAttempts": 6,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": [
+            "Lambda.Unknown"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Next": "Map audio metadata processing"
+    },
+    "Map audio metadata processing": {
+      "Type": "Map",
+      "MaxConcurrency": 24,
+      "ItemsPath": "$.data.iterators",
+      "ItemSelector": {
+        "operation": "StateSegmentAudio",
+        "itemId.$": "$$.Map.Item.Index",
+        "itemData.$": "$$.Map.Item.Value"
+      },
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "INLINE"
+        },
+        "StartAt": "Segment audio (FFmpeg)",
+        "States": {
+          "Segment audio (FFmpeg)": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "OutputPath": "$.Payload",
+            "Parameters": {
+              "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-audio-metadata-extraction",
+              "Payload.$": "$"
+            },
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException",
+                  "Lambda.TooManyRequestsException"
+                ],
+                "IntervalSeconds": 1,
+                "MaxAttempts": 2,
+                "BackoffRate": 1.2
+              }
+            ],
+            "Next": "Run speech enhancement (DeepFilterNet model)"
+          },
+          "Run speech enhancement (DeepFilterNet model)": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "OutputPath": "$.Payload",
+            "Parameters": {
+              "FunctionName.$": "$.deepFilterNetFunc",
+              "Payload.$": "$"
+            },
+            "Catch": [
+              {
+                "ErrorEquals": [
+                  "Lambda.Unknown"
+                ],
+                "Next": "Catch and retry DeepFilterNet model (larger memory)",
+                "ResultPath": "$.errorInfo"
+              }
+            ],
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ClientExecutionTimeoutException",
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException"
+                ],
+                "IntervalSeconds": 6,
+                "MaxAttempts": 6,
+                "BackoffRate": 2
+              },
+              {
+                "ErrorEquals": [
+                  "Lambda.TooManyRequestsException"
+                ],
+                "IntervalSeconds": 1,
+                "MaxAttempts": 6,
+                "BackoffRate": 1.5
+              },
+              {
+                "ErrorEquals": [
+                  "Lambda.Unknown"
+                ],
+                "MaxAttempts": 0
+              }
+            ],
+            "Next": "Speech enhancement completed (or skipped)"
+          },
+          "Catch and retry DeepFilterNet model (larger memory)": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "OutputPath": "$.Payload",
+            "Parameters": {
+              "FunctionName.$": "$.deepFilterNetFunc2",
+              "Payload.$": "$"
+            },
+            "Catch": [
+              {
+                "ErrorEquals": [
+                  "Lambda.Unknown"
+                ],
+                "Next": "Speech enhancement completed (or skipped)",
+                "ResultPath": "$.errorInfo"
+              }
+            ],
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ClientExecutionTimeoutException",
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException"
+                ],
+                "IntervalSeconds": 6,
+                "MaxAttempts": 6,
+                "BackoffRate": 2
+              },
+              {
+                "ErrorEquals": [
+                  "Lambda.TooManyRequestsException"
+                ],
+                "IntervalSeconds": 1,
+                "MaxAttempts": 6,
+                "BackoffRate": 1.5
+              },
+              {
+                "ErrorEquals": [
+                  "Lambda.Unknown"
+                ],
+                "MaxAttempts": 0
+              }
+            ],
+            "Next": "Speech enhancement completed (or skipped)"
+          },
+          "Speech enhancement completed (or skipped)": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "OutputPath": "$.Payload",
+            "Parameters": {
+              "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-audio-metadata-extraction",
+              "Payload": {
+                "operation": "StateSpeedEnhancementCompleted",
+                "itemData.$": "$"
+              }
+            },
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException",
+                  "Lambda.TooManyRequestsException"
+                ],
+                "IntervalSeconds": 1,
+                "MaxAttempts": 2,
+                "BackoffRate": 1.2
+              }
+            ],
+            "Next": "Parallel processing"
+          },
+          "Parallel processing": {
+            "Type": "Parallel",
+            "Branches": [
+              {
+                "StartAt": "Has pyannote lambda?",
+                "States": {
+                  "Has pyannote lambda?": {
+                    "Type": "Choice",
+                    "Choices": [
+                      {
+                        "And": [
+                          {
+                            "Variable": "$.pyannoteAudioFunc",
+                            "IsPresent": true
+                          },
+                          {
+                            "Variable": "$.pyannoteAudioFunc2",
+                            "IsPresent": true
+                          }
+                        ],
+                        "Next": "Run pyannote audio"
+                      }
+                    ],
+                    "Default": "Pyannote audio completed (or skipped)"
+                  },
+                  "Run pyannote audio": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::lambda:invoke",
+                    "OutputPath": "$.Payload",
+                    "Parameters": {
+                      "FunctionName.$": "$.pyannoteAudioFunc",
+                      "Payload.$": "$"
+                    },
+                    "Catch": [
+                      {
+                        "ErrorEquals": [
+                          "Lambda.Unknown"
+                        ],
+                        "Next": "Catch and retry pyannote (larger memory)",
+                        "ResultPath": "$.errorInfo"
+                      }
+                    ],
+                    "Retry": [
+                      {
+                        "ErrorEquals": [
+                          "Lambda.ClientExecutionTimeoutException",
+                          "Lambda.ServiceException",
+                          "Lambda.AWSLambdaException",
+                          "Lambda.SdkClientException"
+                        ],
+                        "IntervalSeconds": 6,
+                        "MaxAttempts": 6,
+                        "BackoffRate": 2
+                      },
+                      {
+                        "ErrorEquals": [
+                          "Lambda.TooManyRequestsException"
+                        ],
+                        "IntervalSeconds": 1,
+                        "MaxAttempts": 6,
+                        "BackoffRate": 1.5
+                      },
+                      {
+                        "ErrorEquals": [
+                          "Lambda.Unknown"
+                        ],
+                        "MaxAttempts": 0
+                      }
+                    ],
+                    "Next": "Pyannote audio completed (or skipped)"
+                  },
+                  "Catch and retry pyannote (larger memory)": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::lambda:invoke",
+                    "OutputPath": "$.Payload",
+                    "Parameters": {
+                      "FunctionName.$": "$.pyannoteAudioFunc2",
+                      "Payload.$": "$"
+                    },
+                    "Retry": [
+                      {
+                        "ErrorEquals": [
+                          "Lambda.ClientExecutionTimeoutException",
+                          "Lambda.ServiceException",
+                          "Lambda.AWSLambdaException",
+                          "Lambda.SdkClientException"
+                        ],
+                        "IntervalSeconds": 6,
+                        "MaxAttempts": 6,
+                        "BackoffRate": 2
+                      },
+                      {
+                        "ErrorEquals": [
+                          "Lambda.TooManyRequestsException"
+                        ],
+                        "IntervalSeconds": 1,
+                        "MaxAttempts": 6,
+                        "BackoffRate": 1.5
+                      },
+                      {
+                        "ErrorEquals": [
+                          "Lambda.Unknown"
+                        ],
+                        "MaxAttempts": 0
+                      }
+                    ],
+                    "Next": "Pyannote audio completed (or skipped)"
+                  },
+                  "Pyannote audio completed (or skipped)": {
+                    "Type": "Succeed"
+                  }
+                }
+              },
+              {
+                "StartAt": "Use whisperX?",
+                "States": {
+                  "Use whisperX?": {
+                    "Type": "Choice",
+                    "Choices": [
+                      {
+                        "And": [
+                          {
+                            "Variable": "$.whisperXFunc",
+                            "IsPresent": true
+                          },
+                          {
+                            "Variable": "$.whisperXFunc2",
+                            "IsPresent": true
+                          }
+                        ],
+                        "Next": "Run whisperX"
+                      }
+                    ],
+                    "Default": "WhisperX completed (or skipped)"
+                  },
+                  "Run whisperX": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::lambda:invoke",
+                    "OutputPath": "$.Payload",
+                    "Parameters": {
+                      "FunctionName.$": "$.whisperXFunc",
+                      "Payload.$": "$"
+                    },
+                    "Catch": [
+                      {
+                        "ErrorEquals": [
+                          "Lambda.Unknown"
+                        ],
+                        "Next": "Catch and retry whisperX (larger memory)",
+                        "ResultPath": "$.errorInfo"
+                      }
+                    ],
+                    "Retry": [
+                      {
+                        "ErrorEquals": [
+                          "Lambda.ClientExecutionTimeoutException",
+                          "Lambda.ServiceException",
+                          "Lambda.AWSLambdaException",
+                          "Lambda.SdkClientException"
+                        ],
+                        "IntervalSeconds": 6,
+                        "MaxAttempts": 6,
+                        "BackoffRate": 2
+                      },
+                      {
+                        "ErrorEquals": [
+                          "Lambda.TooManyRequestsException"
+                        ],
+                        "IntervalSeconds": 1,
+                        "MaxAttempts": 6,
+                        "BackoffRate": 1.5
+                      },
+                      {
+                        "ErrorEquals": [
+                          "Lambda.Unknown"
+                        ],
+                        "MaxAttempts": 0
+                      }
+                    ],
+                    "Next": "WhisperX completed (or skipped)"
+                  },
+                  "Catch and retry whisperX (larger memory)": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::lambda:invoke",
+                    "OutputPath": "$.Payload",
+                    "Parameters": {
+                      "FunctionName.$": "$.whisperXFunc2",
+                      "Payload.$": "$"
+                    },
+                    "Retry": [
+                      {
+                        "ErrorEquals": [
+                          "Lambda.ClientExecutionTimeoutException",
+                          "Lambda.ServiceException",
+                          "Lambda.AWSLambdaException",
+                          "Lambda.SdkClientException"
+                        ],
+                        "IntervalSeconds": 6,
+                        "MaxAttempts": 6,
+                        "BackoffRate": 2
+                      },
+                      {
+                        "ErrorEquals": [
+                          "Lambda.TooManyRequestsException"
+                        ],
+                        "IntervalSeconds": 1,
+                        "MaxAttempts": 6,
+                        "BackoffRate": 1.5
+                      },
+                      {
+                        "ErrorEquals": [
+                          "Lambda.Unknown"
+                        ],
+                        "MaxAttempts": 0
+                      }
+                    ],
+                    "Next": "WhisperX completed (or skipped)"
+                  },
+                  "WhisperX completed (or skipped)": {
+                    "Type": "Succeed"
+                  }
+                }
+              },
+              {
+                "StartAt": "Enable audio tags?",
+                "States": {
+                  "Enable audio tags?": {
+                    "Type": "Choice",
+                    "Choices": [
+                      {
+                        "And": [
+                          {
+                            "Variable": "$.audiosetTaggingFunc",
+                            "IsPresent": true
+                          },
+                          {
+                            "Variable": "$.audiosetTaggingFunc2",
+                            "IsPresent": true
+                          }
+                        ],
+                        "Next": "Run audio tagging (PANNs) model"
+                      }
+                    ],
+                    "Default": "Audio tagging completed (or skipped)"
+                  },
+                  "Run audio tagging (PANNs) model": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::lambda:invoke",
+                    "OutputPath": "$.Payload",
+                    "Parameters": {
+                      "FunctionName.$": "$.audiosetTaggingFunc",
+                      "Payload.$": "$"
+                    },
+                    "Catch": [
+                      {
+                        "ErrorEquals": [
+                          "Lambda.Unknown"
+                        ],
+                        "Next": "Catch and retry audioset tagging (larger memory)",
+                        "ResultPath": "$.errorInfo"
+                      }
+                    ],
+                    "Retry": [
+                      {
+                        "ErrorEquals": [
+                          "Lambda.ClientExecutionTimeoutException",
+                          "Lambda.ServiceException",
+                          "Lambda.AWSLambdaException",
+                          "Lambda.SdkClientException"
+                        ],
+                        "IntervalSeconds": 6,
+                        "MaxAttempts": 6,
+                        "BackoffRate": 2
+                      },
+                      {
+                        "ErrorEquals": [
+                          "Lambda.TooManyRequestsException"
+                        ],
+                        "IntervalSeconds": 1,
+                        "MaxAttempts": 6,
+                        "BackoffRate": 1.5
+                      },
+                      {
+                        "ErrorEquals": [
+                          "Lambda.Unknown"
+                        ],
+                        "MaxAttempts": 0
+                      }
+                    ],
+                    "Next": "Audio tagging completed (or skipped)"
+                  },
+                  "Catch and retry audioset tagging (larger memory)": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::lambda:invoke",
+                    "OutputPath": "$.Payload",
+                    "Parameters": {
+                      "FunctionName.$": "$.audiosetTaggingFunc2",
+                      "Payload.$": "$"
+                    },
+                    "Retry": [
+                      {
+                        "ErrorEquals": [
+                          "Lambda.ClientExecutionTimeoutException",
+                          "Lambda.ServiceException",
+                          "Lambda.AWSLambdaException",
+                          "Lambda.SdkClientException"
+                        ],
+                        "IntervalSeconds": 6,
+                        "MaxAttempts": 6,
+                        "BackoffRate": 2
+                      },
+                      {
+                        "ErrorEquals": [
+                          "Lambda.TooManyRequestsException"
+                        ],
+                        "IntervalSeconds": 1,
+                        "MaxAttempts": 6,
+                        "BackoffRate": 1.5
+                      },
+                      {
+                        "ErrorEquals": [
+                          "Lambda.Unknown"
+                        ],
+                        "MaxAttempts": 0
+                      }
+                    ],
+                    "Next": "Audio tagging completed (or skipped)"
+                  },
+                  "Audio tagging completed (or skipped)": {
+                    "Type": "Succeed"
+                  }
+                }
+              }
+            ],
+            "End": true
+          }
+        }
+      },
+      "ResultPath": "$.data.iterators",
+      "Next": "Merge audio metadata results"
+    },
+    "Merge audio metadata results": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-audio-metadata-extraction",
+        "Payload": {
+          "operation": "StateMergeMetadataResults",
+          "uuid.$": "$.uuid",
+          "input.$": "$.input",
+          "data.$": "$.data",
+          "status": "NOT_STARTED"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.2
+        }
+      ],
+      "End": true
+    }
+  }
+}

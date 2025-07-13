@@ -1,0 +1,54 @@
+{
+  "Comment": "audio ingest state machine to run mediainfo and start elastictranscode job to create proxy",
+  "StartAt": "Run mediainfo",
+  "States": {
+    "Run mediainfo": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-ingest-audio",
+        "Payload": {
+          "operation": "run-mediainfo",
+          "uuid.$": "$.uuid",
+          "status": "NOT_STARTED",
+          "progress": 0,
+          "input.$": "$.input",
+          "data.$": "$.data"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.2
+        }
+      ],
+      "Next": "Start and wait for transcode job"
+    },
+    "Start and wait for transcode job": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+      "Parameters": {
+        "FunctionName": "so0050-0a48a6e54829-ingest-audio",
+        "Payload": {
+          "token.$": "$$.Task.Token",
+          "operation": "start-transcode",
+          "uuid.$": "$.uuid",
+          "status": "NOT_STARTED",
+          "progress": 0,
+          "input.$": "$.input",
+          "data.$": "$.data"
+        }
+      },
+      "TimeoutSeconds": 86400,
+      "End": true
+    }
+  }
+}

@@ -1,0 +1,322 @@
+{
+  "Comment": "Comprehend analysis state machine",
+  "StartAt": "Parallel processing",
+  "States": {
+    "Parallel processing": {
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "Prepare comprehend iterators",
+          "States": {
+            "Prepare comprehend iterators": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "OutputPath": "$.Payload",
+              "Parameters": {
+                "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-analysis-audio",
+                "Payload": {
+                  "operation": "StatePrepareComprehendIterators",
+                  "uuid.$": "$.uuid",
+                  "status": "NOT_STARTED",
+                  "progress": 0,
+                  "input.$": "$.input",
+                  "data.$": "$.data"
+                }
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 1.2
+                }
+              ],
+              "Next": "Map processing"
+            },
+            "Map processing": {
+              "Type": "Map",
+              "MaxConcurrency": 10,
+              "ItemsPath": "$.data.iterators",
+              "ItemProcessor": {
+                "ProcessorConfig": {
+                  "Mode": "INLINE"
+                },
+                "StartAt": "Batch detection",
+                "States": {
+                  "Batch detection": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::lambda:invoke",
+                    "OutputPath": "$.Payload",
+                    "Parameters": {
+                      "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-analysis-audio",
+                      "Payload.$": "$"
+                    },
+                    "Retry": [
+                      {
+                        "ErrorEquals": [
+                          "Lambda.ServiceException",
+                          "Lambda.AWSLambdaException",
+                          "Lambda.SdkClientException",
+                          "Lambda.TooManyRequestsException"
+                        ],
+                        "IntervalSeconds": 1,
+                        "MaxAttempts": 2,
+                        "BackoffRate": 1.2
+                      }
+                    ],
+                    "End": true
+                  }
+                }
+              },
+              "ResultPath": "$.data.iterators",
+              "End": true
+            }
+          }
+        },
+        {
+          "StartAt": "Check custom entity criteria",
+          "States": {
+            "Check custom entity criteria": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "OutputPath": "$.Payload",
+              "Parameters": {
+                "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-analysis-audio",
+                "Payload": {
+                  "operation": "check-custom-entity-criteria",
+                  "uuid.$": "$.uuid",
+                  "status": "NOT_STARTED",
+                  "progress": 0,
+                  "input.$": "$.input",
+                  "data.$": "$.data"
+                }
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 1.2
+                }
+              ],
+              "Next": "Can start custom entity?"
+            },
+            "Can start custom entity?": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "And": [
+                    {
+                      "Variable": "$.data.comprehend",
+                      "IsPresent": true
+                    },
+                    {
+                      "Variable": "$.data.comprehend.customentity",
+                      "IsPresent": true
+                    },
+                    {
+                      "Variable": "$.data.comprehend.customentity.prefix",
+                      "IsPresent": true
+                    }
+                  ],
+                  "Next": "Start and wait custom entity"
+                }
+              ],
+              "Default": "Custom entity skipped"
+            },
+            "Start and wait custom entity": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+              "Parameters": {
+                "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-analysis-audio",
+                "Payload": {
+                  "token.$": "$$.Task.Token",
+                  "uuid.$": "$.uuid",
+                  "status": "NOT_STARTED",
+                  "progress": 0,
+                  "operation": "start-custom-entity",
+                  "input.$": "$.input",
+                  "data.$": "$.data"
+                }
+              },
+              "TimeoutSeconds": 86400,
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 1.2
+                }
+              ],
+              "Next": "Wait for custom entity status (3mins)"
+            },
+            "Wait for custom entity status (3mins)": {
+              "Type": "Wait",
+              "Seconds": 180,
+              "Next": "Check custom entity status"
+            },
+            "Check custom entity status": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "OutputPath": "$.Payload",
+              "Parameters": {
+                "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-analysis-audio",
+                "Payload": {
+                  "operation": "check-custom-entity-status",
+                  "uuid.$": "$.uuid",
+                  "status": "NOT_STARTED",
+                  "progress": 0,
+                  "input.$": "$.input",
+                  "data.$": "$.data"
+                }
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 1.2
+                }
+              ],
+              "Next": "Custom entity completed?"
+            },
+            "Custom entity completed?": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Or": [
+                    {
+                      "Variable": "$.status",
+                      "StringEquals": "NO_DATA"
+                    },
+                    {
+                      "Variable": "$.status",
+                      "StringEquals": "ERROR"
+                    }
+                  ],
+                  "Next": "Custom entity skipped"
+                },
+                {
+                  "Variable": "$.status",
+                  "StringEquals": "COMPLETED",
+                  "Next": "Create custom entity track"
+                }
+              ],
+              "Default": "Wait for custom entity status (3mins)"
+            },
+            "Create custom entity track": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "OutputPath": "$.Payload",
+              "Parameters": {
+                "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-analysis-audio",
+                "Payload": {
+                  "operation": "create-custom-entity-track",
+                  "uuid.$": "$.uuid",
+                  "status": "NOT_STARTED",
+                  "progress": 0,
+                  "input.$": "$.input",
+                  "data.$": "$.data"
+                }
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 1.2
+                }
+              ],
+              "Next": "Index custom entity results"
+            },
+            "Index custom entity results": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "OutputPath": "$.Payload",
+              "Parameters": {
+                "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-analysis-audio",
+                "Payload": {
+                  "operation": "index-custom-entity-results",
+                  "uuid.$": "$.uuid",
+                  "status": "NOT_STARTED",
+                  "progress": 0,
+                  "input.$": "$.input",
+                  "data.$": "$.data"
+                }
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 1.2
+                }
+              ],
+              "End": true
+            },
+            "Custom entity skipped": {
+              "Type": "Succeed"
+            }
+          }
+        }
+      ],
+      "Next": "Comprehened analysis completed"
+    },
+    "Comprehened analysis completed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-analysis-audio",
+        "Payload": {
+          "operation": "StateComprehendAnalysisCompleted",
+          "parallelStateOutputs.$": "$"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.2
+        }
+      ],
+      "End": true
+    }
+  }
+}

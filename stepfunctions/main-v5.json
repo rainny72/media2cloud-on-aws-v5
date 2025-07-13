@@ -1,0 +1,31 @@
+{
+  "Comment": "main state machine to run ingest and anlysis sub state machines",
+  "StartAt": "Start ingest state machine",
+  "States": {
+    "Start ingest state machine": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::states:startExecution.sync:2",
+      "Parameters": {
+        "Input": {
+          "input.$": "$.input"
+        },
+        "StateMachineArn": "arn:aws:states:us-west-2:189427507247:stateMachine:so0050-0a48a6e54829-ingest-main"
+      },
+      "ResultSelector": {
+        "ingestOutput.$": "$.Input"
+      },
+      "Next": "Start analysis state machine"
+    },
+    "Start analysis state machine": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::states:startExecution.sync:2",
+      "Parameters": {
+        "Input": {
+          "input.$": "$.ingestOutput.input"
+        },
+        "StateMachineArn": "arn:aws:states:us-west-2:189427507247:stateMachine:so0050-0a48a6e54829-analysis-main"
+      },
+      "End": true
+    }
+  }
+}

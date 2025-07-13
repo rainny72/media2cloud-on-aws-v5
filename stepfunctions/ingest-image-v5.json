@@ -1,0 +1,36 @@
+{
+  "Comment": "image ingest state machine to run exiftool and extract thumbnail image",
+  "StartAt": "Run imageinfo",
+  "States": {
+    "Run imageinfo": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-west-2:189427507247:function:so0050-0a48a6e54829-ingest-image",
+        "Payload": {
+          "operation": "run-imageinfo",
+          "uuid.$": "$.uuid",
+          "status": "NOT_STARTED",
+          "progress": 0,
+          "input.$": "$.input",
+          "data.$": "$.data"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.2
+        }
+      ],
+      "End": true
+    }
+  }
+}
