@@ -386,31 +386,9 @@ async function searchFace(imageFile) {
 }
 ```
 
-## 5. 비용 최적화
+## 5. 모니터링 및 로깅
 
-### 5.1 예상 비용 (월 기준)
-- **Rekognition**: 이미지 1,000개 처리 시 약 $1
-- **DynamoDB**: 읽기/쓰기 요청 기반 (PAY_PER_REQUEST)
-- **Lambda**: 실행 시간 기반 (무료 티어 포함)
-- **S3**: 저장 용량 기반
-- **API Gateway**: API 호출 수 기반
-
-### 5.2 비용 절약 방법
-```yaml
-# DynamoDB 온디맨드 대신 프로비저닝 모드 사용 (예측 가능한 워크로드)
-BillingMode: PROVISIONED
-ProvisionedThroughput:
-  ReadCapacityUnits: 5
-  WriteCapacityUnits: 5
-
-# Lambda 메모리 최적화
-MemorySize: 128  # 최소 메모리로 시작
-Timeout: 30      # 적절한 타임아웃 설정
-```
-
-## 6. 모니터링 및 로깅
-
-### 6.1 CloudWatch 로그 확인
+### 5.1 CloudWatch 로그 확인
 ```bash
 # Lambda 로그 확인
 aws logs describe-log-groups --log-group-name-prefix "/aws/lambda/face-"
@@ -419,7 +397,7 @@ aws logs describe-log-groups --log-group-name-prefix "/aws/lambda/face-"
 aws logs get-log-events --log-group-name "/aws/lambda/face-detection-stack" --log-stream-name "latest"
 ```
 
-### 6.2 DynamoDB 데이터 확인
+### 5.2 DynamoDB 데이터 확인
 ```bash
 # 테이블 스캔
 aws dynamodb scan --table-name face-index-stack
@@ -430,9 +408,9 @@ aws dynamodb get-item \
   --key '{"faceId":{"S":"your-face-id"}}'
 ```
 
-## 7. 확장 옵션
+## 6. 확장 옵션
 
-### 7.1 웹 인터페이스 추가
+### 6.1 웹 인터페이스 추가
 ```html
 <!DOCTYPE html>
 <html>
@@ -474,7 +452,7 @@ aws dynamodb get-item \
 </html>
 ```
 
-### 7.2 비디오 지원 추가
+### 6.2 비디오 지원 추가
 ```python
 # 비디오에서 프레임 추출 후 얼굴 인덱싱
 import cv2
@@ -502,9 +480,9 @@ def extract_frames_and_index(video_path, interval=30):
     cap.release()
 ```
 
-## 8. 보안 고려사항
+## 7. 보안 고려사항
 
-### 8.1 API 보안 강화
+### 7.1 API 보안 강화
 ```yaml
 # Cognito 인증 추가
 FaceSearchMethod:
@@ -514,7 +492,7 @@ FaceSearchMethod:
     AuthorizerId: !Ref CognitoAuthorizer
 ```
 
-### 8.2 S3 버킷 보안
+### 7.2 S3 버킷 보안
 ```yaml
 # S3 버킷 정책
 MediaBucketPolicy:

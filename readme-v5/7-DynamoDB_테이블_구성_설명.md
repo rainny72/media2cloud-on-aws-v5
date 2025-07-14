@@ -615,29 +615,3 @@ const createAlarm = {
 };
 ```
 
-## 11. 비용 최적화
-
-### 11.1 용량 모드 선택
-- **On-Demand**: 예측 불가능한 워크로드
-- **Provisioned**: 예측 가능한 워크로드
-
-### 11.2 데이터 라이프사이클
-```javascript
-// TTL 설정으로 자동 삭제
-const ttlConfig = {
-  AttributeName: 'expiresAt',
-  Enabled: true
-};
-
-// 만료 시간 설정 (30일 후)
-const item = {
-  uuid: 'item-id',
-  data: 'item-data',
-  expiresAt: Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60)
-};
-```
-
-### 11.3 인덱스 최적화
-- **필요한 속성만 프로젝션**
-- **사용하지 않는 인덱스 제거**
-- **Sparse 인덱스 활용**
